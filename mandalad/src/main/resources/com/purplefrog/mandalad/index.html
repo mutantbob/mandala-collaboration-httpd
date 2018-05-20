@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Mandala collaboration server</title>
+</head>
+<body>
+<h1>Mandala collaboration server</h1>
+
+<!--
+<form action="uploadTest" method="post" enctype="multipart/form-data">
+    upload file : <input name="art" type="file"/>
+    <br>
+    extra text : <input name="bacon" type="text" />
+    <br>
+    <input type="submit"> <input type="reset">
+</form>
+-->
+
+<form action="upload2" method="post" enctype="multipart/form-data">
+    upload file : <input name="art" type="file"/>
+    <br>
+    ring # : <input name="ring" type="text" />
+    <br>
+    <input type="submit"> <input type="reset">
+</form>
+
+<hr>
+
+<form action="deletePanel" method="post" enctype="multipart/form-data">
+    reset panel for ring # : <input name="ring" type="text" />
+    <br>
+    <input type="submit"> <input type="reset">
+</form>
+$rings:{r|
+<table style="display:inline">
+    <tr><td>$r.index$</td><td><img src="$r.imageURL$"></td></tr>
+</table>
+}$
+
+<p>
+
+
+</p><img src="rings" width="1000" height="1000">
+</body>
+</html>

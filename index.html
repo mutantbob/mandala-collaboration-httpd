@@ -1,0 +1,24 @@
+<html>
+  <head>
+    <script src="mandala-generator.js"></script>
+    <script>
+console.log("alpha")
+window.addEventListener("load",function() {
+console.log("beta")
+mandala_test_pattern(document.getElementById("mandala"))
+})
+    </script>
+
+  </head>
+
+  <body>
+    <svg id="svg"
+	 width="800" height="800"
+	 viewbox="0 0 800 800">
+      <g transform="translate(400,400)"
+	 id="mandala"/>
+    </svg>
+    
+  </body>
+  
+  </html>
