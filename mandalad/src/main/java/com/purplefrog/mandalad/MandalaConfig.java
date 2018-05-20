@@ -444,8 +444,9 @@ public class MandalaConfig
         {
             StringBuilder rval = new StringBuilder();
 
-            double x = -hAlign * width;
-            double y = -vAlign * height;
+            double half = 0.5*(this.width-width);
+            double x = - hAlign*width - half;
+            double y = - vAlign * height;
             rval.append("<g transform=\"translate(" + x + "," + y + ")\">\n");
             rval.append(payload);
             rval.append("</g>");
