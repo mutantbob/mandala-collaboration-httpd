@@ -104,7 +104,9 @@ public class MandalaConfig
     {
         return "<svg width=\"" + svgWidth + "\" height=\"" + svgHeight + "\"" +
             " viewbox=\" 0 0 " +svgWidth+" "+svgHeight+ "\" xmlns=\"http://www.w3.org/2000/svg\"" +
-            " xmlns:xlink=\"http://www.w3.org/1999/xlink\" >\n";
+            " xmlns:xlink=\"http://www.w3.org/1999/xlink\"" +
+            " xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\"" +
+            " xmlns:sodipodi=\"http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd\" >\n";
     }
 
     public String svgForRing(Ring ring1, int ring)
@@ -158,7 +160,7 @@ public class MandalaConfig
     public String jiggerTransform(double rotFocus, double dyFocus, double rotAux, double dyAux, double width)
     {
         String transform = "rotate(" + rotAux + ") translate(0," + dyAux + ")";
-        transform = " translate(" +(-0*width)+ ","+-dyFocus+") rotate(" +-rotFocus+ ") "+transform;
+        transform = " translate(" +(0.5*width)+ ","+-dyFocus+") rotate(" +-rotFocus+ ") "+transform;
         return transform;
     }
 
@@ -183,50 +185,53 @@ public class MandalaConfig
 
         rval .append(svgHeader(w, h));
 
-        rval.append("<g transform=\"translate(" +(0.5*w)+ ",0)\">\n");
-
         double rot1 = degreesForPanel(ring1, 0);
         double dy1 = yOffsetForRing(ring1);
 
 
+        rval.append(layerGroup(("clones below"), true));
         if (ring+1< rings.size()) {
-            rval.append("<g>\n");
             int idx2 = ring + 1;
             Ring ring2 = rings.get(idx2);
             double hAlign = 0.5;
             double vAlign = 0;
 
             for (int j=-2; j<=2; j++) {
-                double rot0 = degreesForPanel(ring2, j);
-                double dy0 = yOffsetForRing(ring2);
+                double rot2 = degreesForPanel(ring2, j);
+                double dy2 = yOffsetForRing(ring2);
+                System.out.println("ring "+idx2+" rot="+rot2+"; dy="+dy2);
 
-                String transform = jiggerTransform(rot1, dy1, rot0, dy0, w);
+                String transform = jiggerTransform(rot1, dy1, rot2, dy2, w);
                 rval.append("<g transform=\" " + transform + "\">\n");
                 rval.append(ring2.mPanel.toSVG(ring2.width, ring2.height, hAlign, vAlign));
                 rval.append("\n</g>\n");
             }
-            rval.append("\n</g>\n");
         }
 
-        rval.append("<g>\n");
-        rval.append("<use transform=\"" +jiggerTransform(rot1, dy1, degreesForPanel(ring1, -1), dy1, w)+ "\"" +
+        double dy1_ = yOffsetForRing(ring1);
+        rval.append("<use transform=\"" +jiggerTransform(rot1, dy1, degreesForPanel(ring1, -1), dy1_, w)+ "\"" +
             " xlink:href=\"#panel\"/>\n");
-        rval.append("  <g id=\"panel\"" +
-            " transform=\"" +jiggerTransform(rot1, dy1, degreesForPanel(ring1, 0), dy1, w)+"\""+
-            ">\n");
-        rval.append( ring1.mPanel.toSVG(w, h, 0.5, 0) );
-        rval.append("\n  </g>\n");
-        rval.append("<use transform=\"" +jiggerTransform(rot1, dy1, degreesForPanel(ring1, 1), dy1, w)+ "\"" +
-            " xlink:href=\"#panel\"/>\n");
+
         rval.append("\n</g>\n");
 
+        rval.append(layerGroup("art", false));
+
+        rval.append("  <g transform=\"" +jiggerTransform(rot1, dy1, degreesForPanel(ring1, 0), dy1_, w)+"\">\n");
+        rval.append("  <g id=\"panel\">\n");
+        rval.append( ring1.mPanel.toSVG(ring1.width, ring1.height, 0.5, 0) );
+        rval.append("\n  </g>\n");
+        rval.append("  </g>\n");
+        rval.append("  </g>\n");
+
+        rval.append(layerGroup(("clones above"), true));
+        rval.append("<use transform=\"" +jiggerTransform(rot1, dy1, degreesForPanel(ring1, 1), dy1_, w)+ "\"" +
+            " xlink:href=\"#panel\"/>\n");
 
         if (ring>0) {
-            rval.append("<g>\n");
             int idx0 = ring - 1;
             Ring ring0 = rings.get(idx0);
-            double hAlign, vAlign;
-            hAlign = 0.5;
+            double hAlign = 0.5;
+            double vAlign;
             if (idx0 == 0) {
                 vAlign = 0.5;
             } else {
@@ -236,19 +241,25 @@ public class MandalaConfig
             for (int j=-2; j<=2; j++) {
                 double rot0 = degreesForPanel(ring0, j);
                 double dy0 = yOffsetForRing(ring0);
+                System.out.println("ring "+idx0+" rot="+rot0+"; dy="+dy0);
 
                 String transform = jiggerTransform(rot1, dy1, rot0, dy0, w);
                 rval.append("<g transform=\" " + transform + "\">\n");
                 rval.append(ring0.mPanel.toSVG(ring0.width, ring0.height, hAlign, vAlign));
                 rval.append("\n</g>\n");
             }
-            rval.append("\n</g>\n");
         }
-
         rval.append("</g>\n");
+
         rval.append("\n</svg>\n");
 
         return rval.toString();
+    }
+
+    public static String layerGroup(String layerLabel, boolean insensitive)
+    {
+        String insensitiveAttr = insensitive ?" sodipodi:insensitive=\"true\"":"";
+        return "<g inkscape:groupmode=\"layer\" inkscape:label=\"" + layerLabel + "\"" +insensitiveAttr+ ">\n";
     }
 
     public static class Ring
