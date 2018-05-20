@@ -224,6 +224,17 @@ public class MandalaD
         return EntityAndHeaders.plainTextPayload(404, "not found");
     }
 
+    @WebMethod
+    public EntityAndHeaders template(@WebParam(name="ring") int ring)
+    {
+        EntityAndHeaders x = complainIfBadRing(ring);
+        if (x != null) return x;
+
+        String payload = mandala.templateForRing(ring);
+
+        return EntityAndHeaders.plainPayload(200, payload, "image/svg+xml");
+    }
+
     public static void main(String[] argv)
         throws IOException
     {
