@@ -120,10 +120,8 @@ public class MandalaD
     {
         System.out.println("upload from "+env.remoteAddressString()+" to ring "+ring+" of "+art.getSize()+" bytes");
 
-        if (ring >= mandala.ringCount())
-            return EntityAndHeaders.plainTextPayload(403, "bad ring number "+ring+">="+mandala.ringCount());
-        if (ring < 0)
-            return EntityAndHeaders.plainTextPayload(403, "bad ring number "+ring+"<0");
+        EntityAndHeaders x = complainIfBadRing(ring);
+        if (x != null) return x;
 
         int sizeLimit = 10 << 20;
         if (art.getSize()>sizeLimit)
@@ -159,10 +157,22 @@ public class MandalaD
         return EntityAndHeaders.plainTextPayload(200, "wrote "+count+" bytes to "+f.getName());
     }
 
+    public EntityAndHeaders complainIfBadRing(@WebParam(name = "ring") int ring)
+    {
+        if (ring >= mandala.ringCount())
+            return EntityAndHeaders.plainTextPayload(403, "bad ring number "+ring+">="+mandala.ringCount());
+        if (ring < 0)
+            return EntityAndHeaders.plainTextPayload(403, "bad ring number "+ring+"<0");
+        return null;
+    }
+
     @WebMethod
     public EntityAndHeaders deletePanel(@WebParam(name = "ring") int ring)
         throws IOException
     {
+        EntityAndHeaders x = complainIfBadRing(ring);
+        if (x != null) return x;
+
         File f = fileForRing(ring);
 
         boolean success = f.delete();
@@ -195,6 +205,9 @@ public class MandalaD
     @WebMethod
     public EntityAndHeaders image(@WebParam(name="ring") int ring)
     {
+        EntityAndHeaders x = complainIfBadRing(ring);
+        if (x != null) return x;
+
         File f = fileForRing(ring);
         if (f.exists()) {
             Tika tika = new Tika();
