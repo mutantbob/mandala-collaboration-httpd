@@ -7,7 +7,7 @@ import org.jdom.Document;
 import org.jdom.Element;
 import org.jdom.input.*;
 import org.jdom.output.*;
-import org.w3c.dom.*;
+
 import java.io.*;
 import java.util.*;
 
@@ -29,7 +29,7 @@ public class MandalaConfig
 
         for (int ring=0; ring<nRings; ring++)
         {
-            int radius = 40+(ring+1)*50;
+            int radius = 40+(ring)*50;
             double phase ;
             if (ring%2==0)
                 phase = 0;
@@ -90,38 +90,45 @@ public class MandalaConfig
             " xmlns:xlink=\"http://www.w3.org/1999/xlink\" >\n");
         rval.append("<g transform=\"translate(" +svgWidth/2+ "," +svgHeight/2+ ")\">\n");
         for (int i=rings.size()-1; i>=0; i--) {
-            svgForRing(rval, rings.get(i), i);
+            rval.append( svgForRing(rings.get(i), i) );
         }
         rval.append("</g>\n");
         rval.append("</svg>\n");
         return rval.toString();
     }
 
-    public void svgForRing(StringBuilder rval, Ring ring1, int ring)
+    public String svgForRing(Ring ring1, int ring)
     {
+        StringBuilder rval = new StringBuilder();
         String id = "ring"+ring;
-        for (int j=0; j<=ring1.count; j++) {
-            double degrees = (j + ring1.phase) / ring1.count * 360;
-            double dy = - ( ring1.radius + 0.5 * ring1.height );
-            rval.append("<g transform=\"rotate(" + degrees + ") translate(" + 0 + "," + dy + ")\">\n");
-            if (j==0) {
-                rval.append("<g id=\"" + id + "\">\n");
-                rval.append(ring1.mPanel.toSVG(ring1.width, ring1.height));
-                rval.append("\n</g>\n");
-            } else if (j==ring1.count) {
-                rval.append("<use xlink:href=\"#" + id + "\" clip-path=\"url(#clip" +ring+ ")\"/>\n");
-                int yPad = 50;
-                rval.append("<clipPath id=\"clip" +ring+ "\">\n");
-                rval.append("<rect x=\"" +(
-                    -ring1.width//"0"
-                )+ "\" y=\"" + (-yPad)+ "\" width=\"" + ring1.width+ "\" height=\"" +(ring1.height+2* yPad)+ "\"" +
-                    " style=\"stroke:#f00; fill:none\"/>" );
-                rval.append("</clipPath>\n");
-            } else {
-                rval.append("<use xlink:href=\"#" + id + "\"/>\n");
+        if (ring==0) {
+            rval.append(ring1.mPanel.toSVG(ring1.width, ring1.height, 0.5, 0.5));
+        } else {
+
+            for (int j = 0; j <= ring1.count; j++) {
+                double degrees = (j + ring1.phase) / ring1.count * 360;
+                double dy = -(ring1.radius + 0.5 * ring1.height);
+                rval.append("<g transform=\"rotate(" + degrees + ") translate(" + 0 + "," + dy + ")\">\n");
+                if (j == 0) {
+                    rval.append("<g id=\"" + id + "\">\n");
+                    rval.append(ring1.mPanel.toSVG(ring1.width, ring1.height, 0.5, 0));
+                    rval.append("\n</g>\n");
+                } else if (j == ring1.count) {
+                    rval.append("<use xlink:href=\"#" + id + "\" clip-path=\"url(#clip" + ring + ")\"/>\n");
+                    int yPad = 50;
+                    rval.append("<clipPath id=\"clip" + ring + "\">\n");
+                    rval.append("<rect x=\"" + (
+                        -ring1.width//"0"
+                    ) + "\" y=\"" + (-yPad) + "\" width=\"" + ring1.width + "\" height=\"" + (ring1.height + 2 * yPad) + "\"" +
+                        " style=\"stroke:#f00; fill:none\"/>");
+                    rval.append("</clipPath>\n");
+                } else {
+                    rval.append("<use xlink:href=\"#" + id + "\"/>\n");
+                }
+                rval.append("</g>\n");
             }
-            rval.append("</g>\n");
         }
+        return rval.toString();
     }
 
     public static class Ring
@@ -152,7 +159,7 @@ public class MandalaConfig
 
     public interface MandalaPanel
     {
-        String toSVG(double width, double height);
+        String toSVG(double width, double height, double hAlign, double vAlign);
 
         void resetPanel();
     }
@@ -169,10 +176,10 @@ public class MandalaConfig
             blob = "data:"+mime+";base64,"+base64;
         }
 
-        public String toSVG(double width, double height)
+        public String toSVG(double width, double height, double hAlign, double vAlign)
         {
-            double x = -width / 2.0;
-            double y = 0 ;//- height;
+            double x = -hAlign *width;
+            double y = -vAlign *height;
             return blobImage(x, y, width, height, blob);
         }
 
@@ -206,7 +213,7 @@ public class MandalaConfig
         }
 
         @Override
-        public String toSVG(double width, double height)
+        public String toSVG(double width, double height, double hAlign, double vAlign)
         {
             if (delegate == null ) {
                 if (imageFile.exists()) {
@@ -218,7 +225,7 @@ public class MandalaConfig
                             delegate = new MandalaPanel()
                             {
                                 @Override
-                                public String toSVG(double width, double height)
+                                public String toSVG(double width, double height, double hAlign, double vAlign)
                                 {
                                     return payload;
                                 }
@@ -240,10 +247,10 @@ public class MandalaConfig
             }
 
             if (delegate !=null) {
-                return delegate.toSVG(width, height);
+                return delegate.toSVG(width, height, hAlign, vAlign);
             }
 
-            return placeholder(width, height);
+            return placeholder(width, height, 0.5, 0.0);
         }
 
         public String extractArtFromSVG(File imageFile)
@@ -287,18 +294,19 @@ public class MandalaConfig
             }
         }
 
-        public String placeholder(double width, double height)
+        public String placeholder(double width, double height, double hAlign, double vAlign)
         {
             StringBuilder rval = new StringBuilder();
             {
-                double x = -0.5 * width;
-                double y = 0;//-0.5 * height;
+                double x = -hAlign * width;
+                double y = -vAlign *height;
                 rval.append("<rect x=\"" + x + "\" y=\"" + y + "\"" +
                     " width=\"" +width+ "\" height=\"" +height+ "\"" +
                     " style=\"fill:#ffc; stroke:#000\"/>\n");
             }
-            rval.append("<text x=\"0\" y=\"" +(0.5*height+10)+
-                "\" style=\"fill:#000; stroke:none; font-size:20px; text-align:middle\">" +
+            int fontSize = 20;
+            rval.append("<text x=\"0\" y=\"" +((0.5-vAlign)*height+0.5* fontSize)+
+                "\" style=\"fill:#000; stroke:none; font-size:" + fontSize + "px; text-align:middle\">" +
                 message+"</text>");
             return rval.toString();
         }
