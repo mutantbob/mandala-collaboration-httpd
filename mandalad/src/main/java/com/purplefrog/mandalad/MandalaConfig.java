@@ -269,7 +269,7 @@ public class MandalaConfig
                 double vAlign = 0;
                 for (int j=-2; j<=2; j++) {
                     double rot0 = degreesForPanel(ring0, j);
-                    double dy0 = yOffsetForRingIndex(ring);
+                    double dy0 = yOffsetForRingIndex(idx0);
                     System.out.println("ring "+idx0+" rot="+rot0+"; dy="+dy0);
 
                     String transform = jiggerTransform(rot1, dy1, rot0, dy0, w);
