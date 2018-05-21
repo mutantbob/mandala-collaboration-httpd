@@ -3,29 +3,28 @@ package com.purplefrog.mandalad;
 import com.purplefrog.httpcliches.*;
 import org.apache.log4j.*;
 import org.apache.tika.*;
-import org.jdom.Document;
-import org.jdom.Element;
+import org.jdom.*;
 import org.jdom.input.*;
 import org.jdom.output.*;
 
 import java.io.*;
 import java.util.*;
+import java.util.stream.*;
 
 public class MandalaConfig
 {
     private static final Logger logger = Logger.getLogger(MandalaConfig.class);
+    public static final String MANDALA_NS_09 = "http://www.purplefrog.com/schemas/mandala0.9";
 
     List<Ring> rings;
 
     public MandalaConfig()
-        throws IOException
     {
-        rings = new ArrayList<Ring>();
+        rings = new ArrayList<>();
 
         int oldCount=0;
 
         int nRings = 8;
-        int h = 60;
 
         for (int ring=0; ring<nRings; ring++)
         {
@@ -42,6 +41,9 @@ public class MandalaConfig
             } else {
                 w = 80;
             }
+            double h = 60;
+            if (ring==0)
+                h = w;
 
             int minCount = (int) Math.ceil( radius*2*Math.PI / w );
             int count = nextCount(oldCount, minCount);
@@ -106,7 +108,8 @@ public class MandalaConfig
             " viewbox=\" 0 0 " +svgWidth+" "+svgHeight+ "\" xmlns=\"http://www.w3.org/2000/svg\"" +
             " xmlns:xlink=\"http://www.w3.org/1999/xlink\"" +
             " xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\"" +
-            " xmlns:sodipodi=\"http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd\" >\n";
+            " xmlns:sodipodi=\"http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd\"" +
+            " xmlns:mandala=\"" + MANDALA_NS_09 + "\" >\n";
     }
 
     public String svgForRing(Ring ring1, int ring)
@@ -185,18 +188,24 @@ public class MandalaConfig
 
         rval .append(svgHeader(w, h));
 
+        rval.append(ring1.getSVGDefs());
+
         double rot1 = degreesForPanel(ring1, 0);
         double dy1 = yOffsetForRing(ring1);
+        if (ring==0)
+            dy1 += 0.5*(w - ring1.width);
 
-
-        rval.append(layerGroup(("clones below"), true));
+        rval.append(layerGroup(("clones below"), true, true));
         if (ring+1< rings.size()) {
             int idx2 = ring + 1;
             Ring ring2 = rings.get(idx2);
             double hAlign = 0.5;
             double vAlign = 0;
 
-            for (int j=-2; j<=2; j++) {
+            IntStream js = IntStream.range(-2, 3);
+            if (ring==0)
+                js = IntStream.range(0, ring2.count);
+            for (int j : js.toArray()) {
                 double rot2 = degreesForPanel(ring2, j);
                 double dy2 = yOffsetForRing(ring2);
                 System.out.println("ring "+idx2+" rot="+rot2+"; dy="+dy2);
@@ -208,45 +217,57 @@ public class MandalaConfig
             }
         }
 
-        double dy1_ = yOffsetForRing(ring1);
-        rval.append("<use transform=\"" +jiggerTransform(rot1, dy1, degreesForPanel(ring1, -1), dy1_, w)+ "\"" +
-            " xlink:href=\"#panel\"/>\n");
+        {
+            double dy1_ = yOffsetForRing(ring1);
+            String art = pickUnusedId(ring);
 
-        rval.append("\n</g>\n");
+            if (ring>0) {
+                for (int j = -1; j < 0; j++) {
+                    rval.append("<use transform=\"" + jiggerTransform(rot1, dy1, degreesForPanel(ring1, j), dy1_, w) + " " +
+                        "translate(" + (-0.5 * w) + ",0)" +
+                        "\"" +
+                        " xlink:href=\"#" + art + "\"/>\n");
+                }
+            }
 
-        rval.append(layerGroup("art", false));
+            rval.append("\n</g>\n");
 
-        rval.append("  <g transform=\"" +jiggerTransform(rot1, dy1, degreesForPanel(ring1, 0), dy1_, w)+"\">\n");
-        rval.append("  <g id=\"panel\">\n");
-        rval.append( ring1.mPanel.toSVG(ring1.width, ring1.height, 0.5, 0) );
-        rval.append("\n  </g>\n");
-        rval.append("  </g>\n");
-        rval.append("  </g>\n");
+            rval.append(layerGroup(art, false, false));
+            rval.append( ring1.mPanel.toSVG(w, h, 0, 0) );
+            rval.append("  </g>\n");
 
-        rval.append(layerGroup(("clones above"), true));
-        rval.append("<use transform=\"" +jiggerTransform(rot1, dy1, degreesForPanel(ring1, 1), dy1_, w)+ "\"" +
-            " xlink:href=\"#panel\"/>\n");
+            rval.append(layerGroup(("clones above"), true, true));
+            if (ring>0) {
+                for (int j=1; j<=1; j++) {
+                                rval.append("<use transform=\"" + jiggerTransform(rot1, dy1, degreesForPanel(ring1, j), dy1_, w) + " " +
+                                    "translate(" + (-0.5 * w) + ",0)\"" +
+                                    " xlink:href=\"#"+art+"\"/>\n");
+                            }
+            }
+        }
 
         if (ring>0) {
             int idx0 = ring - 1;
             Ring ring0 = rings.get(idx0);
             double hAlign = 0.5;
-            double vAlign;
             if (idx0 == 0) {
-                vAlign = 0.5;
-            } else {
-                vAlign = 0;
-            }
 
-            for (int j=-2; j<=2; j++) {
-                double rot0 = degreesForPanel(ring0, j);
-                double dy0 = yOffsetForRing(ring0);
-                System.out.println("ring "+idx0+" rot="+rot0+"; dy="+dy0);
-
-                String transform = jiggerTransform(rot1, dy1, rot0, dy0, w);
+                String transform = jiggerTransform(rot1, dy1, 0,0, w);
                 rval.append("<g transform=\" " + transform + "\">\n");
-                rval.append(ring0.mPanel.toSVG(ring0.width, ring0.height, hAlign, vAlign));
+                rval.append(ring0.mPanel.toSVG(ring0.width, ring0.height, 0.5, 0.5));
                 rval.append("\n</g>\n");
+            } else {
+                double vAlign = 0;
+                for (int j=-2; j<=2; j++) {
+                    double rot0 = degreesForPanel(ring0, j);
+                    double dy0 = yOffsetForRing(ring0);
+                    System.out.println("ring "+idx0+" rot="+rot0+"; dy="+dy0);
+
+                    String transform = jiggerTransform(rot1, dy1, rot0, dy0, w);
+                    rval.append("<g transform=\" " + transform + "\">\n");
+                    rval.append(ring0.mPanel.toSVG(ring0.width, ring0.height, hAlign, vAlign));
+                    rval.append("\n</g>\n");
+                }
             }
         }
         rval.append("</g>\n");
@@ -256,10 +277,35 @@ public class MandalaConfig
         return rval.toString();
     }
 
-    public static String layerGroup(String layerLabel, boolean insensitive)
+    public String pickUnusedId(int ring)
+    {
+        Set<String> ids = allSVGIds();
+        String id = "art"; //+ring;
+        if (!ids.contains(id))
+            return id;
+        for (int i=0; i<99999; i++) {
+            id = "art"+i;
+            if (!ids.contains(id))
+                return id;
+        }
+        throw new IllegalStateException("how did I not find an unused id");
+    }
+
+    public Set<String> allSVGIds()
+    {
+        TreeSet<String> rval = new TreeSet<>();
+        for (Ring ring : rings) {
+            rval.addAll(ring.allSVGIds());
+        }
+        return rval;
+    }
+
+    public static String layerGroup(String layerId, boolean insensitive, boolean illustrativeClones)
     {
         String insensitiveAttr = insensitive ?" sodipodi:insensitive=\"true\"":"";
-        return "<g inkscape:groupmode=\"layer\" inkscape:label=\"" + layerLabel + "\"" +insensitiveAttr+ ">\n";
+        String clonesAttr = illustrativeClones ? " mandala:illustrativeClones=\"true\"":"";
+        return "<g id=\"" +layerId+ "\" inkscape:groupmode=\"layer\" inkscape:label=\"" + layerId + "\""
+            +insensitiveAttr+clonesAttr+ ">\n";
     }
 
     public static class Ring
@@ -285,6 +331,16 @@ public class MandalaConfig
         public void resetPanel()
         {
             mPanel.resetPanel();
+        }
+
+        public Collection<? extends String> allSVGIds()
+        {
+            return mPanel.allSVGIds();
+        }
+
+        public String getSVGDefs()
+        {
+            return mPanel.getSVGDefs();
         }
     }
 
@@ -344,7 +400,7 @@ public class MandalaConfig
                 return delegate.toSVG(width, height, hAlign, vAlign);
             }
 
-            return placeholder(width, height, 0.5, 0.0);
+            return placeholder(width, height, hAlign, vAlign);
         }
 
         public MandalaPanel getDelegate()
@@ -376,9 +432,7 @@ public class MandalaConfig
         {
 
             try {
-                SAXBuilder builder  = new SAXBuilder();
-                Document doc = builder.build(imageFile);
-                Element root = doc.getRootElement();
+                Element root = getRootElement();
 
                 double width = Double.parseDouble(root.getAttributeValue("width"));
                 double height = Double.parseDouble(root.getAttributeValue("height"));
@@ -412,8 +466,10 @@ public class MandalaConfig
                     " style=\"fill:#ffc; stroke:#000\"/>\n");
             }
             int fontSize = 20;
-            rval.append("<text x=\"0\" y=\"" +((0.5-vAlign)*height+0.5* fontSize)+
-                "\" style=\"fill:#000; stroke:none; font-size:" + fontSize + "px; text-align:middle\">" +
+            double textX = (0.5-hAlign) * width;
+            double textY = (0.5 - vAlign) * height + 0.5 * fontSize;
+            rval.append("<text x=\"" + textX + "\" y=\"" + textY + "\"" +
+                " style=\"fill:#000; stroke:none; font-size:" + fontSize + "px; text-anchor:middle\">" +
                 message+"</text>");
             return rval.toString();
         }
@@ -423,6 +479,67 @@ public class MandalaConfig
             delegate = null;
         }
 
+        public Collection<String> allSVGIds()
+        {
+            if (getDelegate() instanceof SVGMandalaPanel) {
+                SVGMandalaPanel svgP = (SVGMandalaPanel) delegate;
+
+                try {
+                    Element root = getRootElement();
+
+                    Set<String> rval = new TreeSet<>();
+                    collectIds(root, rval);
+                    return rval;
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+            return new TreeSet<>();
+        }
+
+        public Element getRootElement()
+            throws JDOMException, IOException
+        {
+            SAXBuilder builder  = new SAXBuilder();
+            Document doc = builder.build(imageFile);
+            return doc.getRootElement();
+        }
+
+        public String getSVGDefs()
+        {
+            MandalaPanel delegate = getDelegate();
+            if (delegate instanceof SVGMandalaPanel) {
+
+                try {
+                    Element root=getRootElement();
+                    List<Element> children = root.getChildren();
+                    for (Element child : children) {
+                        if ("defs".equals(child.getName()))
+                            return new XMLOutputter().outputString(child);
+                    }
+                } catch (Exception e) {
+                    logger.warn("failed to extract <defs> from SVG "+this.imageFile, e);
+                }
+
+            }
+            return "";
+        }
+    }
+
+    public static void collectIds(Element root, Set<String> rval)
+    {
+        String id = root.getAttributeValue("id");
+        try {
+            if (id!=null)
+                rval.add(id);
+        } catch (NullPointerException e) {
+            e.printStackTrace();
+        }
+        System.out.println("id = "+id);
+        List<Element> children = root.getChildren();
+        for (Element child : children) {
+            collectIds(child, rval);
+        }
     }
 
     public static class SVGMandalaPanel
@@ -444,14 +561,25 @@ public class MandalaConfig
         {
             StringBuilder rval = new StringBuilder();
 
-            double half = 0.5*(this.width-width);
-            double x = - hAlign*width - half;
-            double y = - vAlign * height;
+            double halfW = 0.5*(this.width-width);
+            double x = - hAlign*width - halfW;
+            double y = yOffsetFor(height, vAlign);
             rval.append("<g transform=\"translate(" + x + "," + y + ")\">\n");
             rval.append(payload);
+            rval.append("<rect x=\"0\" y=\"0\" width=\"" +
+                this.width+"\" height=\"" +
+                this.height+"\" style=\"stroke:#0ff; fill:none\" />\n");
             rval.append("</g>");
             return rval.toString();
         }
+
+        public double yOffsetFor(double height, double vAlign)
+        {
+            double halfH = 0.5*(this.height-height);
+            //return - vAlign*height - halfH;
+            return - vAlign * this.height;
+        }
+
     }
 
     public static String extractPanelElementsFromSVG(Element root)
@@ -468,6 +596,11 @@ public class MandalaConfig
                 continue;
             if ("metadata".equals(child.getName()))
                 continue;
+
+            String illustrativeClone = child.getAttributeValue("illustrativeClones", Namespace.getNamespace(MANDALA_NS_09));
+            if ("true".equals(illustrativeClone))
+                continue;
+
             rval.append(xout.outputString(child));
         }
 

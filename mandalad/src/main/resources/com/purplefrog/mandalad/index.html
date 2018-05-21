@@ -32,9 +32,13 @@
     <br>
     <input type="submit"> <input type="reset">
 </form>
+<p>
+    For convenient editing of SVG elements, you can download a template which includes a ring panel surrounded by the other panels in its context.
+    This simplifies the alignment of elements from adjacent panels:
+
 $rings:{r|
-<table style="display:inline">
-    <tr><td>$r.index$ <br><a href="template?ring=$r.index$">template</a></td><td><img src="$r.imageURL$"></td></tr>
+<table style="display:inline; border: 2px solid #040 " >
+    <tr><td align="right">$r.index$ <br><a href="template?ring=$r.index$">template</a></td><td><img src="$r.imageURL$"></td></tr>
 </table>
 }$
 
