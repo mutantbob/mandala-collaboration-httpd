@@ -1,6 +1,8 @@
 package com.purplefrog.mandalad;
 
+import com.purplefrog.apachehttpcliches.*;
 import com.purplefrog.httpcliches.*;
+import org.apache.http.entity.*;
 import org.apache.log4j.*;
 import org.apache.tika.*;
 import org.jdom.*;
@@ -64,6 +66,11 @@ public class MandalaConfig
         return rings.size();
     }
 
+    public EntityAndHeaders getStrippedImage(int ring)
+    {
+        return rings.get(ring).getStrippedImage();
+    }
+
     public static double yOffsetForRing(Ring ring0, double vAlign)
     {
         return -(ring0.radius + vAlign *ring0.height);
@@ -93,6 +100,9 @@ public class MandalaConfig
         int svgWidth = 1000;
         int svgHeight = 1000;
         rval.append(svgHeader(svgWidth, svgHeight));
+        for (int i=rings.size()-1; i>=0; i--) {
+            rval.append(rings.get(i).getSVGDefs());
+        }
         rval.append("<g transform=\"translate(" +svgWidth/2+ "," +svgHeight/2+ ")\">\n");
         for (int i=rings.size()-1; i>=0; i--) {
             rval.append( svgForRing(rings.get(i), i) );
@@ -346,20 +356,32 @@ public class MandalaConfig
         {
             return mPanel.getSVGDefs();
         }
+
+        public EntityAndHeaders getStrippedImage()
+        {
+            return mPanel.getStrippedImage();
+        }
     }
 
     public interface MandalaPanel
     {
         String toSVG(double width, double height, double hAlign, double vAlign);
+
+        EntityAndHeaders getStrippedImage();
     }
 
     public static class PNGMandalaPanel
         implements MandalaPanel
     {
         private final String blob;
+        private final String mime;
+        private final File imageFile;
+
         public PNGMandalaPanel(File imageFile, String mime)
             throws IOException
         {
+            this.imageFile = imageFile;
+            this.mime = mime;
             InputStream istr = new FileInputStream(imageFile);
             StringBuilder base64 = fileToBase64(istr);
             blob = "data:"+mime+";base64,"+base64;
@@ -370,6 +392,12 @@ public class MandalaConfig
             double x = -hAlign *width;
             double y = -vAlign *height;
             return blobImage(x, y, width, height, blob);
+        }
+
+        @Override
+        public EntityAndHeaders getStrippedImage()
+        {
+            return new EntityAndHeaders(200, new FileEntity(imageFile, ContentType.create(mime)));
         }
     }
 
@@ -442,7 +470,7 @@ public class MandalaConfig
                 double height = Double.parseDouble(root.getAttributeValue("height"));
 
                 String result = extractPanelElementsFromSVG(root);
-                return new SVGMandalaPanel(result, width, height);
+                return new SVGMandalaPanel(result, width, height, getSVGDefs_(root));
             } catch (Exception e) {
                 logger.warn("failed to parse "+ imageFile, e);
 
@@ -454,6 +482,12 @@ public class MandalaConfig
                     public String toSVG(double width, double height, double hAlign, double vAlign)
                     {
                         return result;
+                    }
+
+                    @Override
+                    public EntityAndHeaders getStrippedImage()
+                    {
+                        return EntityAndHeaders.plainPayload(200, result, "image/svg+xml");
                     }
                 };
             }
@@ -514,19 +548,32 @@ public class MandalaConfig
             MandalaPanel delegate = getDelegate();
             if (delegate instanceof SVGMandalaPanel) {
 
-                try {
-                    Element root=getRootElement();
-                    List<Element> children = root.getChildren();
-                    for (Element child : children) {
-                        if ("defs".equals(child.getName()))
-                            return new XMLOutputter().outputString(child);
-                    }
-                } catch (Exception e) {
-                    logger.warn("failed to extract <defs> from SVG "+this.imageFile, e);
-                }
-
+                return new XMLOutputter().outputString(((SVGMandalaPanel) delegate).defs);
+            } else {
+                return "";
             }
-            return "";
+        }
+
+        public Element getSVGDefs_(Element root)
+        {
+            try {
+                List<Element> children = root.getChildren();
+                for (Element child : children) {
+                    if ("defs".equals(child.getName()))
+                        return child;
+                }
+            } catch (Exception e) {
+                logger.warn("failed to extract <defs> from SVG "+this.imageFile, e);
+            }
+            return null;
+        }
+
+        public EntityAndHeaders getStrippedImage()
+        {
+            MandalaPanel delegate = getDelegate();
+            if (delegate == null)
+                return EntityAndHeaders.plainTextPayload(404, "no panel for this ring yet");
+            return delegate.getStrippedImage();
         }
     }
 
@@ -552,12 +599,14 @@ public class MandalaConfig
         private final String payload;
         public final double width;
         public final double height;
+        private Element defs;
 
-        public SVGMandalaPanel(String payload, double width, double height)
+        public SVGMandalaPanel(String payload, double width, double height, Element defs)
         {
             this.payload = payload;
             this.width = width;
             this.height = height;
+            this.defs = defs;
         }
 
         @Override
@@ -582,6 +631,15 @@ public class MandalaConfig
             return - vAlign * this.height;
         }
 
+        public EntityAndHeaders getStrippedImage()
+        {
+            StringBuilder svgDoc = new StringBuilder();
+            svgDoc.append(svgHeader(width, height));
+            svgDoc.append(new XMLOutputter().outputString(defs));
+            svgDoc.append(toSVG(width, height, 0,0));
+            svgDoc.append("</svg>\n");
+            return EntityAndHeaders.plainPayload(200, svgDoc.toString(), "image/svg+xml");
+        }
     }
 
     public static String extractPanelElementsFromSVG(Element root)

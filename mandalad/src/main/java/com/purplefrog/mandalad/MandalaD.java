@@ -104,7 +104,7 @@ public class MandalaD
         for (int i=0; i<mandala.ringCount(); i++) {
             TreeMap map = new TreeMap();
             map.put("index", i);
-            map.put("imageURL", "image?ring="+i);
+            map.put("imageURL", "image?stripped=true&ring="+i);
             rings.add(map);
         }
         st.add("rings", rings);
@@ -203,21 +203,26 @@ public class MandalaD
     }
 
     @WebMethod
-    public EntityAndHeaders image(@WebParam(name="ring") int ring)
+    public EntityAndHeaders image(@WebParam(name="ring") int ring,
+                                  @WebParam(name="stripped") boolean stripped)
     {
         EntityAndHeaders x = complainIfBadRing(ring);
         if (x != null) return x;
 
-        File f = fileForRing(ring);
-        if (f.exists()) {
-            Tika tika = new Tika();
+        if (stripped) {
+            return mandala.getStrippedImage(ring);
+        } else {
+            File f = fileForRing(ring);
+            if (f.exists()) {
+                Tika tika = new Tika();
 
-            try {
-                String mime = tika.detect(f);
-                ContentType cType = ContentType.create(mime);
-                return new EntityAndHeaders(200, new FileEntity(f, cType));
-            } catch (IOException e) {
-                return new EntityAndHeaders(200, new FileEntity(f));
+                try {
+                    String mime = tika.detect(f);
+                    ContentType cType = ContentType.create(mime);
+                    return new EntityAndHeaders(200, new FileEntity(f, cType));
+                } catch (IOException e) {
+                    return new EntityAndHeaders(200, new FileEntity(f));
+                }
             }
         }
 
