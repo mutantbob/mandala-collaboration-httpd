@@ -64,9 +64,9 @@ public class MandalaConfig
         return rings.size();
     }
 
-    public static double yOffsetForRing(Ring ring0)
+    public static double yOffsetForRing(Ring ring0, double vAlign)
     {
-        return -(ring0.radius + 0.5*ring0.height);
+        return -(ring0.radius + vAlign *ring0.height);
     }
 
     public static int nextCount(int oldCount, int minCount)
@@ -119,10 +119,9 @@ public class MandalaConfig
         if (ring==0) {
             rval.append(ring1.mPanel.toSVG(ring1.width, ring1.height, 0.5, 0.5));
         } else {
-
             for (int j = 0; j <= ring1.count; j++) {
                 double degrees = degreesForPanel(ring1, j);
-                double dy = yOffsetForRing(ring1);
+                double dy = yOffsetForRingIndex(ring);
                 rval.append("<g transform=\"rotate(" + degrees + ") translate(" + 0 + "," + dy + ")\">\n");
                 if (j == 0) {
                     rval.append("<g id=\"" + id + "\">\n");
@@ -191,7 +190,7 @@ public class MandalaConfig
         rval.append(ring1.getSVGDefs());
 
         double rot1 = degreesForPanel(ring1, 0);
-        double dy1 = yOffsetForRing(ring1);
+        double dy1 = yOffsetForRingIndex(ring);
         if (ring==0)
             dy1 += 0.5*(w - ring1.width);
 
@@ -207,7 +206,7 @@ public class MandalaConfig
                 js = IntStream.range(0, ring2.count);
             for (int j : js.toArray()) {
                 double rot2 = degreesForPanel(ring2, j);
-                double dy2 = yOffsetForRing(ring2);
+                double dy2 = yOffsetForRingIndex(idx2);
                 System.out.println("ring "+idx2+" rot="+rot2+"; dy="+dy2);
 
                 String transform = jiggerTransform(rot1, dy1, rot2, dy2, w);
@@ -218,7 +217,7 @@ public class MandalaConfig
         }
 
         {
-            double dy1_ = yOffsetForRing(ring1);
+            double dy1_ = yOffsetForRingIndex(ring);
             String art = pickUnusedId(ring);
 
             if (ring>0) {
@@ -260,7 +259,7 @@ public class MandalaConfig
                 double vAlign = 0;
                 for (int j=-2; j<=2; j++) {
                     double rot0 = degreesForPanel(ring0, j);
-                    double dy0 = yOffsetForRing(ring0);
+                    double dy0 = yOffsetForRingIndex(ring);
                     System.out.println("ring "+idx0+" rot="+rot0+"; dy="+dy0);
 
                     String transform = jiggerTransform(rot1, dy1, rot0, dy0, w);
@@ -277,10 +276,15 @@ public class MandalaConfig
         return rval.toString();
     }
 
+    public double yOffsetForRingIndex(int ring)
+    {
+        return yOffsetForRing(rings.get(ring), ring>0 ? 0:0.5);
+    }
+
     public String pickUnusedId(int ring)
     {
         Set<String> ids = allSVGIds();
-        String id = "art"; //+ring;
+        String id = "art"+ring;
         if (!ids.contains(id))
             return id;
         for (int i=0; i<99999; i++) {
@@ -566,9 +570,7 @@ public class MandalaConfig
             double y = yOffsetFor(height, vAlign);
             rval.append("<g transform=\"translate(" + x + "," + y + ")\">\n");
             rval.append(payload);
-            rval.append("<rect x=\"0\" y=\"0\" width=\"" +
-                this.width+"\" height=\"" +
-                this.height+"\" style=\"stroke:#0ff; fill:none\" />\n");
+           /* rval.append("<rect x=\"0\" y=\"0\" width=\"" + this.width+"\" height=\"" + this.height+"\" style=\"stroke:#0ff; fill:none\" />\n");*/
             rval.append("</g>");
             return rval.toString();
         }
