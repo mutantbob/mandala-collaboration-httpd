@@ -1,2 +1,11 @@
 *~
 *.iml
+.idea
+
+.gradle
+build/
+.navigation
+captures/
+output.json
+
+dependency-reduced-pom.xml

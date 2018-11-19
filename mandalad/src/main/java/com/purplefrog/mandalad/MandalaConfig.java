@@ -2,7 +2,6 @@ package com.purplefrog.mandalad;
 
 import com.purplefrog.apachehttpcliches.*;
 import com.purplefrog.httpcliches.*;
-import org.apache.http.entity.*;
 import org.apache.log4j.*;
 import org.apache.tika.*;
 import org.jdom.*;
@@ -66,7 +65,7 @@ public class MandalaConfig
         return rings.size();
     }
 
-    public EntityAndHeaders getStrippedImage(int ring)
+    public PayloadAndMIME getStrippedImage(int ring)
     {
         return rings.get(ring).getStrippedImage();
     }
@@ -357,7 +356,7 @@ public class MandalaConfig
             return mPanel.getSVGDefs();
         }
 
-        public EntityAndHeaders getStrippedImage()
+        public PayloadAndMIME getStrippedImage()
         {
             return mPanel.getStrippedImage();
         }
@@ -367,7 +366,7 @@ public class MandalaConfig
     {
         String toSVG(double width, double height, double hAlign, double vAlign);
 
-        EntityAndHeaders getStrippedImage();
+        PayloadAndMIME getStrippedImage();
     }
 
     public static class PNGMandalaPanel
@@ -395,9 +394,9 @@ public class MandalaConfig
         }
 
         @Override
-        public EntityAndHeaders getStrippedImage()
+        public PayloadAndMIME getStrippedImage()
         {
-            return new EntityAndHeaders(200, new FileEntity(imageFile, ContentType.create(mime)));
+            return payloadAndMime(imageFile, mime);
         }
     }
 
@@ -485,9 +484,9 @@ public class MandalaConfig
                     }
 
                     @Override
-                    public EntityAndHeaders getStrippedImage()
+                    public PayloadAndMIME getStrippedImage()
                     {
-                        return EntityAndHeaders.plainPayload(200, result, "image/svg+xml");
+                        return payloadAndMime(result, "image/svg+xml");
                     }
                 };
             }
@@ -568,11 +567,11 @@ public class MandalaConfig
             return null;
         }
 
-        public EntityAndHeaders getStrippedImage()
+        public PayloadAndMIME getStrippedImage()
         {
             MandalaPanel delegate = getDelegate();
             if (delegate == null)
-                return EntityAndHeaders.plainTextPayload(404, "no panel for this ring yet");
+                return new PayloadAndMIME("no panel for this ring yet", "text/plain");
             return delegate.getStrippedImage();
         }
     }
@@ -631,15 +630,20 @@ public class MandalaConfig
             return - vAlign * this.height;
         }
 
-        public EntityAndHeaders getStrippedImage()
+        public PayloadAndMIME getStrippedImage()
         {
             StringBuilder svgDoc = new StringBuilder();
             svgDoc.append(svgHeader(width, height));
             svgDoc.append(new XMLOutputter().outputString(defs));
             svgDoc.append(toSVG(width, height, 0,0));
             svgDoc.append("</svg>\n");
-            return EntityAndHeaders.plainPayload(200, svgDoc.toString(), "image/svg+xml");
+            return payloadAndMime(svgDoc.toString(), "image/svg+xml");
         }
+    }
+
+    public static PayloadAndMIME payloadAndMime(Object payload, String contentType)
+    {
+        return new PayloadAndMIME(payload, contentType);
     }
 
     public static String extractPanelElementsFromSVG(Element root)
@@ -682,7 +686,7 @@ public class MandalaConfig
                 break;
             ostr.write(buffer, 0, n);
         }
-        ostr.flush();
+        ostr.close();
 
         base64.append(new String(baos.toByteArray()));
         return base64;

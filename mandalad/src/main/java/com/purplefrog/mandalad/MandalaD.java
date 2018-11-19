@@ -95,21 +95,28 @@ public class MandalaD
     public EntityAndHeaders rootPage()
         throws IOException
     {
-        InputStream istr = getClass().getResourceAsStream("index.html");
+        ST st = rootPage2(mandala, getClass());
+
+        return EntityAndHeaders.plainPayload(200, st.render(), "text/html");
+    }
+
+    public static ST rootPage2(MandalaConfig mandala, Class cls)
+        throws IOException
+    {
+        InputStream istr = cls.getResourceAsStream("index.html");
         String template = Util2.slurp(new InputStreamReader(istr));
 
         ST st = new ST(HTMLEnabledObject.makeSTGroup(true, '$', '$'), template);
 
         List<Map> rings = new ArrayList<>();
-        for (int i=0; i<mandala.ringCount(); i++) {
+        for (int i = 0; i< mandala.ringCount(); i++) {
             TreeMap map = new TreeMap();
             map.put("index", i);
             map.put("imageURL", "image?stripped=true&ring="+i);
             rings.add(map);
         }
         st.add("rings", rings);
-
-        return EntityAndHeaders.plainPayload(200, st.render(), "text/html");
+        return st;
     }
 
     @WebMethod
@@ -210,7 +217,13 @@ public class MandalaD
         if (x != null) return x;
 
         if (stripped) {
-            return mandala.getStrippedImage(ring);
+            PayloadAndMIME response = mandala.getStrippedImage(ring);
+            if (response.payload instanceof File) {
+                File file = (File) response.payload;
+                return new EntityAndHeaders(200, new FileEntity(file, ContentType.create(response.contentType)));
+            } else
+                return EntityAndHeaders.plainPayload(200, (String)response.payload, response.contentType);
+
         } else {
             File f = fileForRing(ring);
             if (f.exists()) {
