@@ -19,6 +19,7 @@ import java.net.*;
 import java.util.*;
 import java.util.concurrent.*;
 
+@SuppressWarnings("ResultOfMethodCallIgnored")
 public class MandalaD
     implements HttpRequestHandler
 {
@@ -30,7 +31,6 @@ public class MandalaD
 
 
     public MandalaD(String prefix)
-        throws IOException
     {
         this.prefix = prefix;
         mandala = new MandalaConfig();
