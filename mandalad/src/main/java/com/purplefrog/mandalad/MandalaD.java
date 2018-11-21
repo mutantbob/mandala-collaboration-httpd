@@ -9,7 +9,6 @@ import org.apache.http.*;
 import org.apache.http.entity.*;
 import org.apache.http.protocol.*;
 import org.apache.log4j.*;
-import org.apache.tika.*;
 import org.stringtemplate.v4.*;
 
 import javax.jws.*;
@@ -30,10 +29,10 @@ public class MandalaD
     MandalaConfig mandala;
 
 
-    public MandalaD(String prefix)
+    public MandalaD(String prefix, StorageService storageService)
     {
         this.prefix = prefix;
-        mandala = new MandalaConfig();
+        mandala = new MandalaConfig(storageService);
     }
 
     public void handle(HttpRequest httpRequest, HttpResponse httpResponse, HttpContext httpContext)
@@ -134,34 +133,9 @@ public class MandalaD
         if (art.getSize()>sizeLimit)
             return EntityAndHeaders.plainTextPayload(403, "file too large, upload cancelled");
 
-        File f = fileForRing(ring);
+        long count = mandala.uploadPanelArt(ring, art.getSize(), art.getInputStream());
 
-        File tmpFile = new File(f.getPath()+".new");
-
-        byte[] buffer = new byte[64<<10];
-        InputStream istr = art.getInputStream();
-        OutputStream ostr = new FileOutputStream(tmpFile);
-        int count=0;
-        while (true) {
-            int n = istr.read(buffer);
-            if (n<1)
-                break;
-            ostr.write(buffer, 0, n);
-            count += n;
-
-            if (count > sizeLimit) {
-                tmpFile.delete();
-                return EntityAndHeaders.plainTextPayload(403, "file too large, upload cancelled");
-            }
-        }
-        ostr.close();
-        istr.close();
-
-        f.delete();
-        tmpFile.renameTo(f);
-        mandala.resetPanel(ring);
-
-        return EntityAndHeaders.plainTextPayload(200, "wrote "+count+" bytes to "+f.getName());
+        return EntityAndHeaders.plainTextPayload(200, "wrote "+count+" bytes to "+ring);
     }
 
     public EntityAndHeaders complainIfBadRing(@WebParam(name = "ring") int ring)
@@ -175,31 +149,19 @@ public class MandalaD
 
     @WebMethod
     public EntityAndHeaders deletePanel(@WebParam(name = "ring") int ring)
-        throws IOException
     {
         EntityAndHeaders x = complainIfBadRing(ring);
         if (x != null) return x;
 
-        File f = fileForRing(ring);
-
-        boolean success = f.delete();
-
-        mandala.resetPanel(ring);
+        boolean success = mandala.deletePanel(ring);
 
         String msg;
         if (success) {
-            msg = "discarded " + f.getName();
+            msg = "discarded " + ring;
         } else {
-            msg = "failed to delete "+f.getName();
+            msg = "failed to delete "+ring;
         }
         return EntityAndHeaders.plainTextPayload(200, msg);
-    }
-
-    public static File fileForRing(@WebParam(name = "ring") int ring)
-    {
-        File dir = new File("/var/tmp/mandala/");
-        String basename = "panel" + ring ;
-        return new File(dir, basename);
     }
 
     @WebMethod
@@ -212,35 +174,45 @@ public class MandalaD
     @WebMethod
     public EntityAndHeaders image(@WebParam(name="ring") int ring,
                                   @WebParam(name="stripped") boolean stripped)
+        throws IOException
     {
         EntityAndHeaders x = complainIfBadRing(ring);
         if (x != null) return x;
 
+        PayloadAndMIME response;
         if (stripped) {
-            PayloadAndMIME response = mandala.getStrippedImage(ring);
-            if (response.payload instanceof File) {
-                File file = (File) response.payload;
-                return new EntityAndHeaders(200, new FileEntity(file, ContentType.create(response.contentType)));
-            } else
-                return EntityAndHeaders.plainPayload(200, (String)response.payload, response.contentType);
-
+            response = mandala.getStrippedImage(ring);
         } else {
-            File f = fileForRing(ring);
-            if (f.exists()) {
-                Tika tika = new Tika();
-
-                try {
-                    String mime = tika.detect(f);
-                    ContentType cType = ContentType.create(mime);
-                    return new EntityAndHeaders(200, new FileEntity(f, cType));
-                } catch (IOException e) {
-                    return new EntityAndHeaders(200, new FileEntity(f));
-                }
-            }
+            response = mandala.getImage(ring);
         }
+
+        if (response != null)
+            return toEntity(response);
 
         return EntityAndHeaders.plainTextPayload(404, "not found");
     }
+
+    public static EntityAndHeaders toEntity(PayloadAndMIME response)
+        throws IOException
+    {
+        final ContentType contentType = ContentType.create(response.contentType);
+        return response.payload.convert(new BlobConverter<EntityAndHeaders>()
+        {
+            @Override
+            public EntityAndHeaders convertFile(File f)
+                throws IOException
+            {
+                return new EntityAndHeaders(200, new FileEntity(f, contentType));
+            }
+
+            @Override
+            public EntityAndHeaders convertString(String message)
+            {
+                return EntityAndHeaders.plainPayload(200, message, response.contentType);
+            }
+        });
+
+       }
 
     @WebMethod
     public EntityAndHeaders template(@WebParam(name="ring") int ring)
@@ -261,7 +233,8 @@ public class MandalaD
         int port = 4044;
         BasicHTTPAcceptLoop loop = new BasicHTTPAcceptLoop(port, registry, executor);
 
-        MandalaD md = new MandalaD("/mandala");
+        StorageService storageService= new FileStorageService();
+        MandalaD md = new MandalaD("/mandala", storageService);
         registry.register(md.prefix+"*", md);
 
         System.out.println("accepting connections at http://"+ loop.getAddress());

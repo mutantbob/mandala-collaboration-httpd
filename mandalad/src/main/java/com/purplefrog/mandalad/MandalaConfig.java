@@ -1,6 +1,5 @@
 package com.purplefrog.mandalad;
 
-import com.purplefrog.apachehttpcliches.*;
 import com.purplefrog.httpcliches.*;
 import org.apache.log4j.*;
 import org.apache.tika.*;
@@ -12,15 +11,18 @@ import java.io.*;
 import java.util.*;
 import java.util.stream.*;
 
+@SuppressWarnings("StringConcatenationInsideStringBufferAppend")
 public class MandalaConfig
 {
     private static final Logger logger = Logger.getLogger(MandalaConfig.class);
     public static final String MANDALA_NS_09 = "http://www.purplefrog.com/schemas/mandala0.9";
+    private final StorageService storageService;
 
     List<Ring> rings;
 
-    public MandalaConfig()
+    public MandalaConfig(StorageService storageService)
     {
+        this.storageService = storageService;
         rings = new ArrayList<>();
 
         int oldCount=0;
@@ -48,7 +50,7 @@ public class MandalaConfig
 
             int minCount = (int) Math.ceil( radius*2*Math.PI / w );
             int count = nextCount(oldCount, minCount);
-            rings.add(new Ring(phase, count, new PlaceholderPanel(ring), w, h, radius));
+            rings.add(new Ring(phase, count, new PlaceholderPanel(ring, storageService), w, h, radius));
             System.out.println("ring="+ring+" ; count="+count);
 
             oldCount = count;
@@ -65,9 +67,29 @@ public class MandalaConfig
         return rings.size();
     }
 
+    public PayloadAndMIME getImage(int ring)
+    {
+        return rings.get(ring).getImage();
+    }
+
     public PayloadAndMIME getStrippedImage(int ring)
     {
         return rings.get(ring).getStrippedImage();
+    }
+
+    public long uploadPanelArt(int ring, long size, InputStream inputStream)
+        throws IOException
+    {
+        long rval = storageService.saveRingPart(ring, size, inputStream);
+        resetPanel(ring);
+        return rval;
+    }
+
+    public boolean deletePanel(int ring)
+    {
+        boolean rval = storageService.deleteRingPart(ring);
+        resetPanel(ring);
+        return rval;
     }
 
     public static double yOffsetForRing(Ring ring0, double vAlign)
@@ -162,11 +184,6 @@ public class MandalaConfig
     /**
      * the focus element is the element in the template that is editable.  The aux elements are the extra panels that provide context.
      * The resulting transform will be applied to the aux element
-     * @param rotFocus
-     * @param dyFocus
-     * @param rotAux
-     * @param dyAux
-     * @return
      */
     public String jiggerTransform(double rotFocus, double dyFocus, double rotAux, double dyAux, double width)
     {
@@ -356,6 +373,11 @@ public class MandalaConfig
             return mPanel.getSVGDefs();
         }
 
+        public PayloadAndMIME getImage()
+        {
+            return mPanel.getImage();
+        }
+
         public PayloadAndMIME getStrippedImage()
         {
             return mPanel.getStrippedImage();
@@ -367,6 +389,31 @@ public class MandalaConfig
         String toSVG(double width, double height, double hAlign, double vAlign);
 
         PayloadAndMIME getStrippedImage();
+
+        PayloadAndMIME getImage();
+    }
+
+    public static String toBlob(PanelBlob image, String mime)
+        throws IOException
+    {
+        StringBuilder base64;
+        base64 = image.convert(new BlobConverter<StringBuilder>()
+        {
+            @Override
+            public StringBuilder convertFile(File f)
+                throws IOException
+            {
+                return fileToBase64(new FileInputStream(f));
+            }
+
+            @Override
+            public StringBuilder convertString(String message)
+            {
+                throw new UnsupportedOperationException("NYI");
+            }
+        });
+
+        return "data:"+mime+";base64,"+base64;
     }
 
     public static class PNGMandalaPanel
@@ -374,16 +421,14 @@ public class MandalaConfig
     {
         private final String blob;
         private final String mime;
-        private final File imageFile;
+        private final Object image;
 
-        public PNGMandalaPanel(File imageFile, String mime)
+        public PNGMandalaPanel(PanelBlob image, String mime)
             throws IOException
         {
-            this.imageFile = imageFile;
+            this.image = image;
             this.mime = mime;
-            InputStream istr = new FileInputStream(imageFile);
-            StringBuilder base64 = fileToBase64(istr);
-            blob = "data:"+mime+";base64,"+base64;
+            blob = toBlob(image, mime);
         }
 
         public String toSVG(double width, double height, double hAlign, double vAlign)
@@ -394,9 +439,15 @@ public class MandalaConfig
         }
 
         @Override
+        public PayloadAndMIME getImage()
+        {
+            return new PayloadAndMIME((PanelBlob) image, mime);
+        }
+
+        @Override
         public PayloadAndMIME getStrippedImage()
         {
-            return payloadAndMime(imageFile, mime);
+            return getImage();
         }
     }
 
@@ -412,14 +463,14 @@ public class MandalaConfig
     {
         private final int ring;
         String message;
-        File imageFile;
+        PanelBlob imageData;
         MandalaPanel delegate;
 
-        public PlaceholderPanel(int ring)
+        public PlaceholderPanel(int ring, StorageService storageService)
         {
             this.ring = ring;
             this.message = ""+ring;//(char)(0x41+ring);
-            imageFile = MandalaD.fileForRing(ring);
+            imageData = storageService.getRingPart(ring);
         }
 
         @Override
@@ -437,25 +488,43 @@ public class MandalaConfig
         public MandalaPanel getDelegate()
         {
             if (delegate == null ) {
-                if (imageFile.exists()) {
-                    try {
-                        Tika tika = new Tika();
-                        String mime = tika.detect(imageFile);
-                        if ("image/svg+xml".equals(mime)) {
-                            this.delegate = extractArtFromSVG();
-                        } else {
-                            try {
-                                delegate = new PNGMandalaPanel(imageFile, mime);
-                            } catch (IOException e) {
-                                logger.warn("failed to load "+ imageFile);
-                            }
-                        }
-                    } catch (IOException e) {
-                        logger.warn("", e);
-                    }
-                }
+                delegate = fabricateDelegate();
             }
             return delegate;
+        }
+
+        private MandalaPanel fabricateDelegate()
+        {
+            try {
+                return imageData.convert(new BlobConverter<MandalaPanel>()
+                {
+                    @Override
+                    public MandalaPanel convertFile(File imgFile)
+                        throws IOException
+                    {
+                        if (imgFile.exists()) {
+                            Tika tika = new Tika();
+                            String mime = tika.detect(imgFile);
+                            if ("image/svg+xml".equals(mime)) {
+                                return extractArtFromSVG();
+                            } else {
+                                return new PNGMandalaPanel(imageData, mime);
+                            }
+                        }
+
+                        return null;
+                    }
+
+                    @Override
+                    public MandalaPanel convertString(String message)
+                    {
+                        throw new UnsupportedOperationException("NYI");
+                    }
+                });
+            } catch (IOException e) {
+                logger.warn("failed to load " + imageData);
+                return null;
+            }
         }
 
         public MandalaPanel extractArtFromSVG()
@@ -469,14 +538,30 @@ public class MandalaConfig
                 double height = Double.parseDouble(root.getAttributeValue("height"));
 
                 String result = extractPanelElementsFromSVG(root);
-                return new SVGMandalaPanel(result, width, height, getSVGDefs_(root));
+                return new SVGMandalaPanel(result, width, height, getSVGDefs_(root), imageData);
             } catch (Exception e) {
-                logger.warn("failed to parse "+ imageFile, e);
+                logger.warn("failed to parse "+ imageData, e);
 
-                String result;
-                result = Util2.slurp(new FileReader(imageFile));
+                String result = imageData.convert(new BlobConverter<String>()
+                {
+                    @Override
+                    public String convertFile(File f)
+                        throws IOException
+                    {
+                        return Util2.slurp(new FileReader(f));
+                    }
+
+                    @Override
+                    public String convertString(String message)
+                    {
+                        return message;
+                    }
+                });
                 return new MandalaPanel()
                 {
+
+                    protected PayloadAndMIME payloadAndMIME = new PayloadAndMIME(result, "image/svg+xml");
+
                     @Override
                     public String toSVG(double width, double height, double hAlign, double vAlign)
                     {
@@ -484,9 +569,15 @@ public class MandalaConfig
                     }
 
                     @Override
+                    public PayloadAndMIME getImage()
+                    {
+                        return payloadAndMIME;
+                    }
+
+                    @Override
                     public PayloadAndMIME getStrippedImage()
                     {
-                        return payloadAndMime(result, "image/svg+xml");
+                        return payloadAndMIME;
                     }
                 };
             }
@@ -519,8 +610,6 @@ public class MandalaConfig
         public Collection<String> allSVGIds()
         {
             if (getDelegate() instanceof SVGMandalaPanel) {
-                SVGMandalaPanel svgP = (SVGMandalaPanel) delegate;
-
                 try {
                     Element root = getRootElement();
 
@@ -535,10 +624,35 @@ public class MandalaConfig
         }
 
         public Element getRootElement()
-            throws JDOMException, IOException
+            throws IOException
         {
             SAXBuilder builder  = new SAXBuilder();
-            Document doc = builder.build(imageFile);
+
+            Document doc = imageData.convert(new BlobConverter<Document>()
+            {
+                @Override
+                public Document convertFile(File f)
+                    throws IOException
+                {
+                    try {
+                        return builder.build(f);
+                    } catch (JDOMException e) {
+                        throw new IOException("", e);
+                    }
+                }
+
+                @Override
+                public Document convertString(String message)
+                    throws IOException
+                {
+                    try {
+                        return builder.build(new StringReader(message));
+                    } catch (JDOMException e) {
+                        throw new IOException("", e);
+                    }
+                }
+            });
+
             return doc.getRootElement();
         }
 
@@ -562,9 +676,17 @@ public class MandalaConfig
                         return child;
                 }
             } catch (Exception e) {
-                logger.warn("failed to extract <defs> from SVG "+this.imageFile, e);
+                logger.warn("failed to extract <defs> from SVG "+this.imageData, e);
             }
             return null;
+        }
+
+        public PayloadAndMIME getImage()
+        {
+            MandalaPanel delegate = getDelegate();
+            if (delegate == null)
+                return new PayloadAndMIME("no panel for this ring yet", "text/plain");
+            return delegate.getImage();
         }
 
         public PayloadAndMIME getStrippedImage()
@@ -599,13 +721,15 @@ public class MandalaConfig
         public final double width;
         public final double height;
         private Element defs;
+        private PanelBlob imageData;
 
-        public SVGMandalaPanel(String payload, double width, double height, Element defs)
+        public SVGMandalaPanel(String payload, double width, double height, Element defs, PanelBlob imageData)
         {
             this.payload = payload;
             this.width = width;
             this.height = height;
             this.defs = defs;
+            this.imageData = imageData;
         }
 
         @Override
@@ -630,6 +754,12 @@ public class MandalaConfig
             return - vAlign * this.height;
         }
 
+        @Override
+        public PayloadAndMIME getImage()
+        {
+            return new PayloadAndMIME(imageData, "image/svg+xml");
+        }
+
         public PayloadAndMIME getStrippedImage()
         {
             StringBuilder svgDoc = new StringBuilder();
@@ -637,13 +767,8 @@ public class MandalaConfig
             svgDoc.append(new XMLOutputter().outputString(defs));
             svgDoc.append(toSVG(width, height, 0,0));
             svgDoc.append("</svg>\n");
-            return payloadAndMime(svgDoc.toString(), "image/svg+xml");
+            return new PayloadAndMIME(svgDoc.toString(), "image/svg+xml");
         }
-    }
-
-    public static PayloadAndMIME payloadAndMime(Object payload, String contentType)
-    {
-        return new PayloadAndMIME(payload, contentType);
     }
 
     public static String extractPanelElementsFromSVG(Element root)

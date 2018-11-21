@@ -1,7 +1,6 @@
 package com.purplefrog.mandaladSpring;
 
 import com.purplefrog.mandalad.*;
-import org.apache.tika.*;
 import org.springframework.beans.factory.annotation.*;
 import org.springframework.core.io.*;
 import org.springframework.http.*;
@@ -15,13 +14,14 @@ import java.io.*;
 public class MandalaSpring
 {
 
-    private MandalaConfig mandala = new MandalaConfig();
+    private MandalaConfig mandala;
     StorageService storageService;
 
     @Autowired
     public MandalaSpring(StorageService storageService)
     {
         this.storageService = storageService;
+        mandala = new MandalaConfig(this.storageService);
     }
 
     @GetMapping("/")
@@ -40,7 +40,7 @@ public class MandalaSpring
         )
     {
         try {
-            int byteCount = storageService.saveRingPart(ring, art);
+            int byteCount = storageService.saveRingPart(ring, art.getSize(), art.getInputStream());
             mandala.resetPanel(ring);
             return new ResponseEntity<>("Groovy [" +byteCount+ "]", HttpStatus.OK);
         } catch (Exception e) {
@@ -52,42 +52,20 @@ public class MandalaSpring
     @RequestMapping(method = RequestMethod.GET, value="/image")
     public ResponseEntity image(@RequestParam("stripped") boolean stripped,
                                 @RequestParam("ring") int ring)
-        throws FileNotFoundException
+        throws IOException
     {
         ResponseEntity x = complainIfBadRing(ring);
         if (x != null) return x;
 
+        PayloadAndMIME result;
         if (stripped) {
-            PayloadAndMIME result = mandala.getStrippedImage(ring);
-            HttpHeaders headers = headersForContentType(result.contentType);
-
-            Object payload;
-            if (result.payload instanceof File) {
-                File file = (File) result.payload;
-                payload = new InputStreamResource(new FileInputStream(file));
-                headers.setContentLength(file.length());
-            } else {
-                payload = result.payload;
-            }
-
-            return new ResponseEntity(payload, headers, HttpStatus.OK);
+            result = mandala.getStrippedImage(ring);
         } else {
-            File f = fileForRing(ring);
-            if (f.exists()) {
-                String mime;
-                try {
-                    Tika tika = new Tika();
-                    mime = tika.detect(f);
-                } catch (IOException e) {
-                    e.printStackTrace();
-                    mime = "application/octet-stream";
-                }
-                HttpHeaders headers = headersForContentType(mime);
-                return new ResponseEntity<>(f, headers, HttpStatus.OK);
-            }
+            result = mandala.getImage(ring);
         }
 
-        return new ResponseEntity<>("not found", HttpStatus.NOT_FOUND);
+
+        return result.payload.convert(new ResponseEntityBlobConverter(result.contentType));
     }
 
     public static HttpHeaders headersForContentType(String mime)
@@ -95,11 +73,6 @@ public class MandalaSpring
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.parseMediaType(mime));
         return headers;
-    }
-
-    public static File fileForRing(@RequestParam("ring") int ring)
-    {
-        return MandalaD.fileForRing(ring);
     }
 
     @RequestMapping(method = RequestMethod.GET, value="/rings")
@@ -116,17 +89,15 @@ public class MandalaSpring
         ResponseEntity<String> x = complainIfBadRing(ring);
         if (x != null) return x;
 
-        File f = fileForRing(ring);
-
-        boolean success = f.delete();
+        boolean success = storageService.deleteRingPart(ring);
 
         mandala.resetPanel(ring);
 
         String msg;
         if (success) {
-            msg = "discarded " + f.getName();
+            msg = "discarded " + ring;
         } else {
-            msg = "failed to delete "+f.getName();
+            msg = "failed to delete "+ring;
         }
         return new ResponseEntity<>(msg, HttpStatus.OK);
     }
@@ -154,5 +125,30 @@ public class MandalaSpring
         return null;
     }
 
+    public static class ResponseEntityBlobConverter
+        implements BlobConverter<ResponseEntity>
+    {
+        HttpHeaders headers;
 
+        public ResponseEntityBlobConverter(String contentType)
+        {
+            headers = headersForContentType(contentType);
+        }
+
+        @Override
+        public ResponseEntity convertFile(File file)
+            throws IOException
+        {
+            headers.setContentLength(file.length());
+            InputStreamResource resource = new InputStreamResource(new FileInputStream(file));
+            return new ResponseEntity<>(resource, headers, HttpStatus.OK);
+        }
+
+        @Override
+        public ResponseEntity convertString(String s)
+            throws IOException
+        {
+            return new ResponseEntity<>(s, headers, HttpStatus.OK);
+        }
+    }
 }
